@@ -301,7 +301,7 @@ int handlePipe(char* command) {
 
         if (strcmp(args2[0], "my_tee") == 0) {
             handleMyTee(args2);
-            exit(0);  // Critical fix: exit after handleMyTee to avoid execvp
+            exit(0);  // Critical fix: exit after handleMyTee
         } else {
             execvp(args2[0], args2);
             perror("execvp");

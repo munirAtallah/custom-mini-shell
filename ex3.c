@@ -9,6 +9,7 @@
 #include <sys/resource.h>
 #include <signal.h>
 #include <ctype.h>
+#include <pthread.h>
 
 #define MAX_CMD_LENGTH 1024
 #define MAX_ARGUMENTS 64
@@ -26,6 +27,7 @@ int handleRlimit(char** args);
 int redirectStderrToFile(char* command);
 rlim_t parseResourceValue(const char* str);
 char* trimWhitespace(char* str);
+int handleMcalc(char** args);
 
 // === Main Shell Loop ===
 int main() {
@@ -81,6 +83,8 @@ int main() {
                 handleMyTee(args);
             } else if (strcmp(args[0], "rlimit") == 0) {
                 handleRlimit(args);
+            } else if (strcmp(args[0], "mcalc") == 0) {
+                handleMcalc(args);
             } else {
                 pid_t pid = fork();
                 if (pid == 0) {
@@ -98,7 +102,7 @@ int main() {
 
         gettimeofday(&end, NULL);
         double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec)/1e6;
-
+        
         // Only update timing stats for non-background processes
         if (!background) {
             lastTime = elapsed;
@@ -148,14 +152,33 @@ void checkCommand(const char* command) {
 char** splitToWords(char* command) {
     char** words = malloc((MAX_ARGUMENTS + 2) * sizeof(char*));
     int count = 0;
-    char* commandCopy = strdup(command);
-    char* token = strtok(commandCopy, " \t");
-    while (token && count < MAX_ARGUMENTS + 1) {
-        words[count++] = strdup(token);
-        token = strtok(NULL, " \t");
+    char* p = command;
+
+    while (*p) {
+        while (isspace((unsigned char)*p)) p++; // skip spaces
+
+        if (*p == '\0') break;
+
+        char* start;
+        if (*p == '"') {
+            p++; // skip opening quote
+            start = p;
+            while (*p && *p != '"') p++;
+        } else {
+            start = p;
+            while (*p && !isspace((unsigned char)*p)) p++;
+        }
+
+        int len = p - start;
+        char* word = malloc(len + 1);
+        strncpy(word, start, len);
+        word[len] = '\0';
+        words[count++] = word;
+
+        if (*p == '"') p++; // skip closing quote
     }
+
     words[count] = NULL;
-    free(commandCopy);
     return words;
 }
 
@@ -169,7 +192,7 @@ void freeWords(char** words) {
 // === Danger command filtering ===
 int compareWithDangerList(const char* input, char** dangerList, int count) {
     if (!dangerList) return 1;
-
+    
     for (int i = 0; i < count; i++) {
         if (strcmp(input, dangerList[i]) == 0) {
             printf("ERR: Dangerous command detected (\"%s\"). Execution prevented.\n", dangerList[i]);
@@ -195,7 +218,7 @@ char** loadDangerCommands(const char* file, int* count) {
     FILE* fp = fopen(file, "r");
     *count = 0;
     if (!fp) return NULL;
-
+    
     char** list = NULL;
     char buf[MAX_CMD_LENGTH];
     while (fgets(buf, sizeof(buf), fp)) {
@@ -230,7 +253,7 @@ int handleMyTee(char** args) {
         append = 1;
         start = 2;
     }
-
+    
     int fds[MAX_ARGUMENTS], count = 0;
     for (int i = start; args[i]; i++) {
         int flags = O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC);
@@ -242,7 +265,7 @@ int handleMyTee(char** args) {
         }
         count++;
     }
-
+    
     char buf[1024];
     ssize_t bytes;
     while ((bytes = read(STDIN_FILENO, buf, sizeof(buf))) > 0) {
@@ -251,7 +274,7 @@ int handleMyTee(char** args) {
             write(fds[i], buf, bytes);
         }
     }
-
+    
     for (int i = 0; i < count; i++) close(fds[i]);
     return 0;
 }
@@ -265,13 +288,13 @@ int handlePipe(char* command) {
         free(commandCopy);
         return -1;
     }
-
+    
     cmd1 = trimWhitespace(cmd1);
     cmd2 = trimWhitespace(cmd2);
-
+    
     char** args1 = splitToWords(cmd1);
     char** args2 = splitToWords(cmd2);
-
+    
     int pipefd[2];
     if (pipe(pipefd) == -1) {
         perror("pipe");
@@ -298,7 +321,7 @@ int handlePipe(char* command) {
         dup2(pipefd[0], STDIN_FILENO);
         close(pipefd[0]);
         close(pipefd[1]);
-
+        
         if (strcmp(args2[0], "my_tee") == 0) {
             handleMyTee(args2);
             exit(0);  // Critical fix: exit after handleMyTee
@@ -313,7 +336,7 @@ int handlePipe(char* command) {
     close(pipefd[1]);
     waitpid(pid1, NULL, 0);
     waitpid(pid2, NULL, 0);
-
+    
     free(commandCopy);
     freeWords(args1);
     freeWords(args2);
@@ -329,17 +352,17 @@ int redirectStderrToFile(char* command) {
         free(commandCopy);
         return -1;
     }
-
+    
     cmd = trimWhitespace(cmd);
     file = trimWhitespace(file);
-
+    
     int fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         perror("open");
         free(commandCopy);
         return -1;
     }
-
+    
     pid_t pid = fork();
     if (pid == 0) {
         dup2(fd, STDERR_FILENO);
@@ -352,7 +375,7 @@ int redirectStderrToFile(char* command) {
         close(fd);
         waitpid(pid, NULL, 0);
     }
-
+    
     free(commandCopy);
     return 0;
 }
@@ -360,10 +383,10 @@ int redirectStderrToFile(char* command) {
 // === Parse resource value with units ===
 rlim_t parseResourceValue(const char* str) {
     if (strcmp(str, "unlimited") == 0) return RLIM_INFINITY;
-
+    
     char* endptr;
     long value = strtol(str, &endptr, 10);
-
+    
     if (*endptr != '\0') {
         switch (*endptr) {
             case 'K': case 'k': value *= 1024; break;
@@ -372,7 +395,7 @@ rlim_t parseResourceValue(const char* str) {
             case 'B': case 'b': break; // bytes, no multiplication
         }
     }
-
+    
     return (rlim_t)value;
 }
 
@@ -382,16 +405,16 @@ int handleRlimit(char** args) {
 
     if (strcmp(args[1], "show") == 0) {
         struct rlimit r;
-
+        
         // Check if specific resource requested
         if (args[2] && strcmp(args[2], "cpu") == 0) {
             getrlimit(RLIMIT_CPU, &r);
-            printf("CPU time limits: soft=%s, hard=%s\n",
+            printf("CPU time limits: soft=%s, hard=%s\n", 
                    r.rlim_cur == RLIM_INFINITY ? "unlimited" : "limited",
                    r.rlim_max == RLIM_INFINITY ? "unlimited" : "limited");
             return 0;
         }
-
+        
         // Show all limits
         getrlimit(RLIMIT_CPU, &r);
         if (r.rlim_cur == RLIM_INFINITY) {
@@ -399,20 +422,20 @@ int handleRlimit(char** args) {
         } else {
             printf("CPU time: soft=%llus, hard=%llus\n", (unsigned long long)r.rlim_cur, (unsigned long long)r.rlim_max);
         }
-
+        
         getrlimit(RLIMIT_AS, &r);
-        printf("Memory: soft=%ld, hard=%ld\n",
+        printf("Memory: soft=%ld, hard=%ld\n", 
                r.rlim_cur == RLIM_INFINITY ? -1L : (long)r.rlim_cur,
                r.rlim_max == RLIM_INFINITY ? -1L : (long)r.rlim_max);
-
+        
         getrlimit(RLIMIT_FSIZE, &r);
-        printf("File size: soft=%ld, hard=%ld\n",
+        printf("File size: soft=%ld, hard=%ld\n", 
                r.rlim_cur == RLIM_INFINITY ? -1L : (long)r.rlim_cur,
                r.rlim_max == RLIM_INFINITY ? -1L : (long)r.rlim_max);
-
+        
         getrlimit(RLIMIT_NOFILE, &r);
         printf("Open files: soft=%llu, hard=%llu\n", (unsigned long long)r.rlim_cur, (unsigned long long)r.rlim_max);
-
+        
         return 0;
     }
 
@@ -433,11 +456,11 @@ int handleRlimit(char** args) {
                 i++;
                 continue;
             }
-
+            
             *eq = '\0';
             char* key = argCopy;
             char* val = eq + 1;
-
+            
             rlim_t cur = 0, max = 0;
             if (strchr(val, ':')) {
                 char* valCopy = strdup(val);
@@ -449,13 +472,13 @@ int handleRlimit(char** args) {
             } else {
                 cur = max = parseResourceValue(val);
             }
-
+            
             if (strcmp(key, "cpu") == 0) cpu = (struct rlimit){cur, max};
             else if (strcmp(key, "mem") == 0) mem = (struct rlimit){cur, max};
             else if (strcmp(key, "fsize") == 0) fsize = (struct rlimit){cur, max};
             else if (strcmp(key, "nofile") == 0) nofile = (struct rlimit){cur, max};
             else if (strcmp(key, "nproc") == 0) nproc = (struct rlimit){cur, max};
-
+            
             free(argCopy);
             i++;
         }
@@ -464,7 +487,7 @@ int handleRlimit(char** args) {
             fprintf(stderr, "No command specified after resource limits\n");
             return -1;
         }
-
+        
         pid_t pid = fork();
         if (pid == 0) {
             // Child process - set limits and execute command
@@ -475,7 +498,7 @@ int handleRlimit(char** args) {
             setrlimit(RLIMIT_NOFILE, &nofile);
             // NPROC often fails due to permissions, set it but don't report error
             setrlimit(RLIMIT_NPROC, &nproc);
-
+            
             execvp(args[i], &args[i]);
             perror("execvp");
             exit(1);
@@ -505,4 +528,286 @@ int handleRlimit(char** args) {
         return 0;
     }
     return -1;
+}
+
+// === Matrix Calculation Implementation ===
+
+typedef struct {
+    int size;           // N for NxN matrix
+    double* data;       // Matrix data
+} Matrix;
+
+typedef struct {
+    Matrix* mat1;
+    Matrix* mat2;
+    Matrix* result;
+    char operation;     // 'A' for ADD, 'S' for SUB
+} ThreadData;
+
+typedef struct {
+    Matrix** matrices;
+    int count;
+    char operation;
+    Matrix* result;
+} ComputeData;
+
+// Parse matrix from string format "(N,N:a1,a2,...,aN²)"
+Matrix* parseMatrix(const char* str) {
+    if (!str || str[0] != '(' || str[strlen(str)-1] != ')') {
+        return NULL;
+    }
+    
+    // Create a working copy
+    char* copy = strdup(str + 1); // Skip opening parenthesis
+    copy[strlen(copy) - 1] = '\0'; // Remove closing parenthesis
+    
+    // Find first comma to separate rows from rest
+    char* comma = strchr(copy, ',');
+    if (!comma) {
+        free(copy);
+        return NULL;
+    }
+    
+    // Parse rows
+    char rowStr[32];
+    int commaPos = comma - copy;
+    strncpy(rowStr, copy, commaPos);
+    rowStr[commaPos] = '\0';
+    int rows = atoi(rowStr);
+    
+    // Find colon to separate dimensions from data
+    char* colon = strchr(copy, ':');
+    if (!colon) {
+        free(copy);
+        return NULL;
+    }
+    
+    // Parse columns (between first comma and colon)
+    char colStr[32];
+    int colonPos = colon - copy;
+    int colStart = commaPos + 1;
+    int colLen = colonPos - colStart;
+    strncpy(colStr, copy + colStart, colLen);
+    colStr[colLen] = '\0';
+    int cols = atoi(colStr);
+    
+    if (rows != cols || rows <= 0) { // Only square matrices
+        free(copy);
+        return NULL;
+    }
+    
+    Matrix* matrix = malloc(sizeof(Matrix));
+    matrix->size = rows;
+    matrix->data = malloc(rows * cols * sizeof(double));
+    
+    // Parse data elements after colon
+    char* dataStr = colon + 1;
+    char* dataCopy = strdup(dataStr);
+    char* token = strtok(dataCopy, ",");
+    int index = 0;
+    
+    while (token && index < rows * cols) {
+        matrix->data[index++] = atof(token);
+        token = strtok(NULL, ",");
+    }
+    
+    free(dataCopy);
+    
+    if (index != rows * cols) {
+        free(matrix->data);
+        free(matrix);
+        free(copy);
+        return NULL;
+    }
+    
+    free(copy);
+    return matrix;
+}
+
+// Create a copy of matrix
+Matrix* copyMatrix(Matrix* src) {
+    if (!src) return NULL;
+    
+    Matrix* copy = malloc(sizeof(Matrix));
+    copy->size = src->size;
+    copy->data = malloc(src->size * src->size * sizeof(double));
+    memcpy(copy->data, src->data, src->size * src->size * sizeof(double));
+    return copy;
+}
+
+// Free matrix memory
+void freeMatrix(Matrix* matrix) {
+    if (matrix) {
+        free(matrix->data);
+        free(matrix);
+    }
+}
+
+// Thread function for matrix operation
+void* matrixOperation(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    
+    if (!data->mat1 || !data->mat2 || data->mat1->size != data->mat2->size) {
+        return NULL;
+    }
+    
+    int size = data->mat1->size;
+    data->result = malloc(sizeof(Matrix));
+    data->result->size = size;
+    data->result->data = malloc(size * size * sizeof(double));
+    
+    for (int i = 0; i < size * size; i++) {
+        if (data->operation == 'A') {
+            data->result->data[i] = data->mat1->data[i] + data->mat2->data[i];
+        } else if (data->operation == 'S') {
+            data->result->data[i] = data->mat1->data[i] - data->mat2->data[i];
+        }
+    }
+    
+    return NULL;
+}
+
+// Recursive parallel computation
+Matrix* computeParallel(Matrix** matrices, int count, char operation) {
+    if (count == 1) {
+        return copyMatrix(matrices[0]);
+    }
+    
+    if (count == 2) {
+        ThreadData data = {matrices[0], matrices[1], NULL, operation};
+        pthread_t thread;
+        pthread_create(&thread, NULL, matrixOperation, &data);
+        pthread_join(thread, NULL);
+        return data.result;
+    }
+    
+    // Calculate how many pairs we can process
+    int pairs = count / 2;
+    int remaining = count % 2;
+    
+    // Create threads for parallel computation
+    pthread_t* threads = malloc(pairs * sizeof(pthread_t));
+    ThreadData* threadData = malloc(pairs * sizeof(ThreadData));
+    Matrix** nextLevel = malloc((pairs + remaining) * sizeof(Matrix*));
+    
+    // Process pairs in parallel
+    for (int i = 0; i < pairs; i++) {
+        threadData[i].mat1 = matrices[i * 2];
+        threadData[i].mat2 = matrices[i * 2 + 1];
+        threadData[i].result = NULL;
+        threadData[i].operation = operation;
+        pthread_create(&threads[i], NULL, matrixOperation, &threadData[i]);
+    }
+    
+    // Wait for all threads to complete
+    for (int i = 0; i < pairs; i++) {
+        pthread_join(threads[i], NULL);
+        nextLevel[i] = threadData[i].result;
+    }
+    
+    // Handle odd matrix (if any)
+    if (remaining) {
+        nextLevel[pairs] = copyMatrix(matrices[count - 1]);
+    }
+    
+    // Recursive call for next level
+    Matrix* result = computeParallel(nextLevel, pairs + remaining, operation);
+    
+    // Cleanup current level (but not the matrices from input, only computed ones)
+    for (int i = 0; i < pairs; i++) {
+        freeMatrix(nextLevel[i]);
+    }
+    if (remaining && pairs + remaining > 1) {
+        freeMatrix(nextLevel[pairs]);
+    }
+    
+    free(threads);
+    free(threadData);
+    free(nextLevel);
+    
+    return result;
+}
+
+// Print matrix in required format
+void printMatrix(Matrix* matrix) {
+    printf("(%d,%d:", matrix->size, matrix->size);
+    for (int i = 0; i < matrix->size * matrix->size; i++) {
+        if (i > 0) printf(",");
+        // Check if it's a whole number
+        if (matrix->data[i] == (int)matrix->data[i]) {
+            printf("%d", (int)matrix->data[i]);
+        } else {
+            printf("%.10g", matrix->data[i]);
+        }
+    }
+    printf(")\n");
+}
+
+// Main mcalc handler
+int handleMcalc(char** args) {
+    if (!args[1]) {
+        printf("ERR_MAT_INPUT\n");
+        return -1;
+    }
+    
+    // Count arguments and find operation
+    int argCount = 0;
+    while (args[argCount + 1]) argCount++;
+    
+    if (argCount < 3) { // Need at least 2 matrices + operation
+        printf("ERR_MAT_INPUT\n");
+        return -1;
+    }
+    
+    char* operation = args[argCount];
+    if (strcmp(operation, "ADD") != 0 && strcmp(operation, "SUB") != 0) {
+        printf("ERR_MAT_INPUT\n");
+        return -1;
+    }
+    
+    // Parse matrices
+    int matrixCount = argCount - 1;
+    Matrix** matrices = malloc(matrixCount * sizeof(Matrix*));
+    
+    for (int i = 0; i < matrixCount; i++) {
+        matrices[i] = parseMatrix(args[i + 1]);
+        if (!matrices[i]) {
+            // Free already parsed matrices
+            for (int j = 0; j < i; j++) {
+                freeMatrix(matrices[j]);
+            }
+            free(matrices);
+            printf("ERR_MAT_INPUT\n");
+            return -1;
+        }
+        
+        // Check if all matrices have the same size
+        if (i > 0 && matrices[i]->size != matrices[0]->size) {
+            for (int j = 0; j <= i; j++) {
+                freeMatrix(matrices[j]);
+            }
+            free(matrices);
+            printf("ERR_MAT_INPUT\n");
+            return -1;
+        }
+    }
+    
+    // Perform parallel computation
+    char op = (operation[0] == 'A') ? 'A' : 'S';
+    Matrix* result = computeParallel(matrices, matrixCount, op);
+    
+    if (result) {
+        printMatrix(result);
+        freeMatrix(result);
+    } else {
+        printf("ERR_MAT_INPUT\n");
+    }
+    
+    // Cleanup
+    for (int i = 0; i < matrixCount; i++) {
+        freeMatrix(matrices[i]);
+    }
+    free(matrices);
+    
+    return 0;
 }

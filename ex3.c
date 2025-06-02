@@ -29,10 +29,11 @@ rlim_t parseResourceValue(const char* str);
 char* trimWhitespace(char* str);
 int handleMcalc(char** args);
 
-// === Main Shell Loop ===
+//Main Shell
+
 int main() {
     char input[MAX_CMD_LENGTH];
-    int cmdCount = 0, blockedCount = 0, dangerCount = 0;
+    int cmdCount = 0, blockedCount = 0, dangerCount = 0;{}
     double totalTime = 0, minTime = 1e9, maxTime = 0, lastTime = 0;
     char** dangerList = loadDangerCommands("danger.txt", &dangerCount);
 
@@ -103,7 +104,6 @@ int main() {
         gettimeofday(&end, NULL);
         double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec)/1e6;
         
-        // Only update timing stats for non-background processes
         if (!background) {
             lastTime = elapsed;
             totalTime += elapsed;
@@ -111,7 +111,6 @@ int main() {
             if (elapsed > maxTime) maxTime = elapsed;
             cmdCount++;
         } else {
-            // For background processes, don't wait but still count the command
             cmdCount++;
         }
     }
@@ -120,7 +119,6 @@ int main() {
     return 0;
 }
 
-// === Utility: Trim whitespace ===
 char* trimWhitespace(char* str) {
     char* end;
     while(isspace((unsigned char)*str)) str++;
@@ -131,7 +129,6 @@ char* trimWhitespace(char* str) {
     return str;
 }
 
-// === Utility: Validate command ===
 void checkCommand(const char* command) {
     int count = 0;
     bool inWord = false, err_space = false;
@@ -148,20 +145,21 @@ void checkCommand(const char* command) {
     if (err_space) printf("ERR_SPACE\n");
 }
 
-// === Utility: Split string to words ===
+//Split string to words
+
 char** splitToWords(char* command) {
     char** words = malloc((MAX_ARGUMENTS + 2) * sizeof(char*));
     int count = 0;
     char* p = command;
 
     while (*p) {
-        while (isspace((unsigned char)*p)) p++; // skip spaces
+        while (isspace((unsigned char)*p)) p++;
 
         if (*p == '\0') break;
 
         char* start;
         if (*p == '"') {
-            p++; // skip opening quote
+            p++;
             start = p;
             while (*p && *p != '"') p++;
         } else {
@@ -175,21 +173,23 @@ char** splitToWords(char* command) {
         word[len] = '\0';
         words[count++] = word;
 
-        if (*p == '"') p++; // skip closing quote
+        if (*p == '"') p++; 
     }
 
     words[count] = NULL;
     return words;
 }
 
-// === Utility: Free word array ===
+//Free word array
+
 void freeWords(char** words) {
     if (!words) return;
     for (int i = 0; words[i]; i++) free(words[i]);
     free(words);
 }
 
-// === Danger command filtering ===
+//Danger command checks
+
 int compareWithDangerList(const char* input, char** dangerList, int count) {
     if (!dangerList) return 1;
     
@@ -213,7 +213,8 @@ int compareWithDangerList(const char* input, char** dangerList, int count) {
     return 1;
 }
 
-// === Load danger commands from file ===
+//Load danger commands from file
+
 char** loadDangerCommands(const char* file, int* count) {
     FILE* fp = fopen(file, "r");
     *count = 0;
@@ -232,21 +233,24 @@ char** loadDangerCommands(const char* file, int* count) {
     return list;
 }
 
-// === Free danger list memory ===
+//Free danger list memory
+
 void freeDangerList(char** dangerList, int count) {
     if (!dangerList) return;
     for (int i = 0; i < count; i++) free(dangerList[i]);
     free(dangerList);
 }
 
-// === Prompt printing with stats ===
+//Prompt printing
+
 void printPrompt(int cmds, int blocked, double last, double total, double min, double max) {
     double avg = cmds ? total / cmds : 0.0;
     printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
            cmds, blocked, last, avg, min == 1e9 ? 0.0 : min, max);
 }
 
-// === Simulated `tee` command: writes stdin to multiple files + stdout ===
+//Simulated `tee` command: writes stdin to multiple files + stdout
+
 int handleMyTee(char** args) {
     int append = 0, start = 1;
     if (args[1] && strcmp(args[1], "-a") == 0) {
@@ -279,7 +283,8 @@ int handleMyTee(char** args) {
     return 0;
 }
 
-// === Handles pipe commands: cmd1 | cmd2 ===
+//Handles pipe commands: cmd1 | cmd2 
+
 int handlePipe(char* command) {
     char* commandCopy = strdup(command);
     char* cmd1 = strtok(commandCopy, "|");
@@ -306,7 +311,6 @@ int handlePipe(char* command) {
 
     pid_t pid1 = fork();
     if (pid1 == 0) {
-        // First command - write to pipe
         dup2(pipefd[1], STDOUT_FILENO);
         close(pipefd[0]);
         close(pipefd[1]);
@@ -317,14 +321,13 @@ int handlePipe(char* command) {
 
     pid_t pid2 = fork();
     if (pid2 == 0) {
-        // Second command - read from pipe
         dup2(pipefd[0], STDIN_FILENO);
         close(pipefd[0]);
         close(pipefd[1]);
         
         if (strcmp(args2[0], "my_tee") == 0) {
             handleMyTee(args2);
-            exit(0);  // Critical fix: exit after handleMyTee
+            exit(0);
         } else {
             execvp(args2[0], args2);
             perror("execvp");
@@ -343,7 +346,6 @@ int handlePipe(char* command) {
     return 0;
 }
 
-// === Redirect stderr to a file: command 2> file.txt ===
 int redirectStderrToFile(char* command) {
     char* commandCopy = strdup(command);
     char* cmd = strtok(commandCopy, "2>");
@@ -392,21 +394,21 @@ rlim_t parseResourceValue(const char* str) {
             case 'K': case 'k': value *= 1024; break;
             case 'M': case 'm': value *= 1024 * 1024; break;
             case 'G': case 'g': value *= 1024 * 1024 * 1024; break;
-            case 'B': case 'b': break; // bytes, no multiplication
+            case 'B': case 'b': break;
         }
     }
     
     return (rlim_t)value;
 }
 
-// === Resource limit handler (show and set) ===
+//Resource limit handler (show and set)
+
 int handleRlimit(char** args) {
     if (!args[1]) return -1;
 
     if (strcmp(args[1], "show") == 0) {
         struct rlimit r;
         
-        // Check if specific resource requested
         if (args[2] && strcmp(args[2], "cpu") == 0) {
             getrlimit(RLIMIT_CPU, &r);
             printf("CPU time limits: soft=%s, hard=%s\n", 
@@ -447,7 +449,6 @@ int handleRlimit(char** args) {
         struct rlimit nproc = {RLIM_INFINITY, RLIM_INFINITY};
         int i = 2;
 
-        // Parse resource limits
         while (args[i] && strchr(args[i], '=')) {
             char* argCopy = strdup(args[i]);
             char* eq = strchr(argCopy, '=');
@@ -490,13 +491,10 @@ int handleRlimit(char** args) {
         
         pid_t pid = fork();
         if (pid == 0) {
-            // Child process - set limits and execute command
-            // Set limits silently, only report critical failures
             setrlimit(RLIMIT_CPU, &cpu);
             setrlimit(RLIMIT_AS, &mem);
             setrlimit(RLIMIT_FSIZE, &fsize);
             setrlimit(RLIMIT_NOFILE, &nofile);
-            // NPROC often fails due to permissions, set it but don't report error
             setrlimit(RLIMIT_NPROC, &nproc);
             
             execvp(args[i], &args[i]);
@@ -530,18 +528,16 @@ int handleRlimit(char** args) {
     return -1;
 }
 
-// === Matrix Calculation Implementation ===
-
 typedef struct {
-    int size;           // N for NxN matrix
-    double* data;       // Matrix data
+    int size;      
+    double* data;      
 } Matrix;
 
 typedef struct {
     Matrix* mat1;
     Matrix* mat2;
     Matrix* result;
-    char operation;     // 'A' for ADD, 'S' for SUB
+    char operation;    
 } ThreadData;
 
 typedef struct {
@@ -551,17 +547,14 @@ typedef struct {
     Matrix* result;
 } ComputeData;
 
-// Parse matrix from string format "(N,N:a1,a2,...,aN²)"
 Matrix* parseMatrix(const char* str) {
     if (!str || str[0] != '(' || str[strlen(str)-1] != ')') {
         return NULL;
     }
     
-    // Create a working copy
-    char* copy = strdup(str + 1); // Skip opening parenthesis
-    copy[strlen(copy) - 1] = '\0'; // Remove closing parenthesis
+    char* copy = strdup(str + 1); 
+    copy[strlen(copy) - 1] = '\0';
     
-    // Find first comma to separate rows from rest
     char* comma = strchr(copy, ',');
     if (!comma) {
         free(copy);
@@ -575,14 +568,12 @@ Matrix* parseMatrix(const char* str) {
     rowStr[commaPos] = '\0';
     int rows = atoi(rowStr);
     
-    // Find colon to separate dimensions from data
     char* colon = strchr(copy, ':');
     if (!colon) {
         free(copy);
         return NULL;
     }
     
-    // Parse columns (between first comma and colon)
     char colStr[32];
     int colonPos = colon - copy;
     int colStart = commaPos + 1;
@@ -591,7 +582,7 @@ Matrix* parseMatrix(const char* str) {
     colStr[colLen] = '\0';
     int cols = atoi(colStr);
     
-    if (rows != cols || rows <= 0) { // Only square matrices
+    if (rows != cols || rows <= 0) {
         free(copy);
         return NULL;
     }
@@ -600,7 +591,6 @@ Matrix* parseMatrix(const char* str) {
     matrix->size = rows;
     matrix->data = malloc(rows * cols * sizeof(double));
     
-    // Parse data elements after colon
     char* dataStr = colon + 1;
     char* dataCopy = strdup(dataStr);
     char* token = strtok(dataCopy, ",");
@@ -624,7 +614,6 @@ Matrix* parseMatrix(const char* str) {
     return matrix;
 }
 
-// Create a copy of matrix
 Matrix* copyMatrix(Matrix* src) {
     if (!src) return NULL;
     
@@ -635,7 +624,6 @@ Matrix* copyMatrix(Matrix* src) {
     return copy;
 }
 
-// Free matrix memory
 void freeMatrix(Matrix* matrix) {
     if (matrix) {
         free(matrix->data);
@@ -643,7 +631,6 @@ void freeMatrix(Matrix* matrix) {
     }
 }
 
-// Thread function for matrix operation
 void* matrixOperation(void* arg) {
     ThreadData* data = (ThreadData*)arg;
     
@@ -681,16 +668,13 @@ Matrix* computeParallel(Matrix** matrices, int count, char operation) {
         return data.result;
     }
     
-    // Calculate how many pairs we can process
     int pairs = count / 2;
     int remaining = count % 2;
     
-    // Create threads for parallel computation
     pthread_t* threads = malloc(pairs * sizeof(pthread_t));
     ThreadData* threadData = malloc(pairs * sizeof(ThreadData));
     Matrix** nextLevel = malloc((pairs + remaining) * sizeof(Matrix*));
     
-    // Process pairs in parallel
     for (int i = 0; i < pairs; i++) {
         threadData[i].mat1 = matrices[i * 2];
         threadData[i].mat2 = matrices[i * 2 + 1];
@@ -699,21 +683,17 @@ Matrix* computeParallel(Matrix** matrices, int count, char operation) {
         pthread_create(&threads[i], NULL, matrixOperation, &threadData[i]);
     }
     
-    // Wait for all threads to complete
     for (int i = 0; i < pairs; i++) {
         pthread_join(threads[i], NULL);
         nextLevel[i] = threadData[i].result;
     }
     
-    // Handle odd matrix (if any)
     if (remaining) {
         nextLevel[pairs] = copyMatrix(matrices[count - 1]);
     }
     
-    // Recursive call for next level
     Matrix* result = computeParallel(nextLevel, pairs + remaining, operation);
     
-    // Cleanup current level (but not the matrices from input, only computed ones)
     for (int i = 0; i < pairs; i++) {
         freeMatrix(nextLevel[i]);
     }
@@ -728,12 +708,10 @@ Matrix* computeParallel(Matrix** matrices, int count, char operation) {
     return result;
 }
 
-// Print matrix in required format
 void printMatrix(Matrix* matrix) {
     printf("(%d,%d:", matrix->size, matrix->size);
     for (int i = 0; i < matrix->size * matrix->size; i++) {
         if (i > 0) printf(",");
-        // Check if it's a whole number
         if (matrix->data[i] == (int)matrix->data[i]) {
             printf("%d", (int)matrix->data[i]);
         } else {
@@ -743,18 +721,16 @@ void printMatrix(Matrix* matrix) {
     printf(")\n");
 }
 
-// Main mcalc handler
 int handleMcalc(char** args) {
     if (!args[1]) {
         printf("ERR_MAT_INPUT\n");
         return -1;
     }
     
-    // Count arguments and find operation
     int argCount = 0;
     while (args[argCount + 1]) argCount++;
     
-    if (argCount < 3) { // Need at least 2 matrices + operation
+    if (argCount < 3) {
         printf("ERR_MAT_INPUT\n");
         return -1;
     }
@@ -764,35 +740,33 @@ int handleMcalc(char** args) {
         printf("ERR_MAT_INPUT\n");
         return -1;
     }
-    
-    // Parse matrices
+
     int matrixCount = argCount - 1;
     Matrix** matrices = malloc(matrixCount * sizeof(Matrix*));
     
     for (int i = 0; i < matrixCount; i++) {
         matrices[i] = parseMatrix(args[i + 1]);
         if (!matrices[i]) {
-            // Free already parsed matrices
             for (int j = 0; j < i; j++) {
                 freeMatrix(matrices[j]);
             }
+
             free(matrices);
             printf("ERR_MAT_INPUT\n");
             return -1;
         }
-        
-        // Check if all matrices have the same size
+
         if (i > 0 && matrices[i]->size != matrices[0]->size) {
             for (int j = 0; j <= i; j++) {
                 freeMatrix(matrices[j]);
             }
+
             free(matrices);
             printf("ERR_MAT_INPUT\n");
             return -1;
         }
     }
     
-    // Perform parallel computation
     char op = (operation[0] == 'A') ? 'A' : 'S';
     Matrix* result = computeParallel(matrices, matrixCount, op);
     
@@ -803,7 +777,6 @@ int handleMcalc(char** args) {
         printf("ERR_MAT_INPUT\n");
     }
     
-    // Cleanup
     for (int i = 0; i < matrixCount; i++) {
         freeMatrix(matrices[i]);
     }

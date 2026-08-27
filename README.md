@@ -1,9 +1,8 @@
-# Custom Mini Shell
+# 🖥️ Custom Mini Shell
 
-## Overview
 A custom command-line shell written in C. It runs standard programs while adding built-in features: dangerous-command filtering, live timing statistics, pipes, redirection, background jobs, resource-limit control, and a parallel matrix calculator.
 
-## Features
+## ✨ Features
 - Dangerous-command filtering from a `danger.txt` list (blocks exact matches, warns on similar commands)
 - Live stats prompt showing command count, blocked-command count, and last/average/min/max execution times
 - Supports operations:
@@ -15,7 +14,7 @@ A custom command-line shell written in C. It runs standard programs while adding
 - Built-in `mcalc` — a parallel matrix calculator (see below)
 - Proper memory management and error handling
 
-## Usage
+## ▶️ Usage
 ```bash
 gcc library.c -o myshell -lpthread
 ./myshell
@@ -29,7 +28,7 @@ mcalc "(2,2:1,2,3,4)" "(2,2:5,6,7,8)" "ADD"
 done
 ```
 
-## mcalc — Matrix Calculator
+## 🧮 mcalc — Matrix Calculator
 Adds or subtracts two or more square matrices in parallel, using a POSIX threads (`pthreads`) reduction tree.
 
 **Input format:** each matrix is written as `"(N,N:v1,v2,...,vN²)"`
@@ -56,7 +55,7 @@ mcalc "(2,2:9,8,7,6)" "(2,2:1,2,3,4)" "SUB"
 ```
 Invalid input (wrong format, non-square, or mismatched sizes) prints `ERR_MAT_INPUT`.
 
-## Example
+## 🖥️ Example
 ```
 #cmd:0|#dangerous_cmd_blocked:0|last_cmd_time:0.00000|...>>echo hello
 hello
@@ -69,7 +68,8 @@ ERR: Dangerous command detected ("rm -rf /"). Execution prevented.
 #cmd:3|#dangerous_cmd_blocked:1|...>>
 ```
 
-## Notes
+## 📝 Notes
 - The blocked-command list is loaded from `danger.txt` at startup.
 - Background jobs (`&`) are not timed but still counted.
 - `rlimit set` applies limits only to the command that follows it.
+- `mcalc` accepts two or more square matrices of equal size.

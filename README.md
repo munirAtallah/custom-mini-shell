@@ -1,8 +1,5 @@
 # Mini Shell with Matrix Calculation - mcalc
 
-**Author:** Munir Atallah  
-**Course:** Operating Systems
-
 ## Overview
 
 This project extends a custom mini-shell by adding a built-in matrix calculation command: `mcalc`. It allows users to perform parallel matrix addition or subtraction using POSIX threads (`pthreads`).
@@ -25,8 +22,8 @@ This project extends a custom mini-shell by adding a built-in matrix calculation
 ## Usage
 
 ```bash
-gcc ex3.c -o ex3
-./ex3 danger.txt
+gcc library.c -o mcalc
+./mcalc danger.txt
 ```
 
 Example commands within the shell:

@@ -1,40 +1,40 @@
-# Mini Shell with Matrix Calculation - mcalc
+# Custom Mini Shell
 
 ## Overview
-
-This project extends a custom mini-shell by adding a built-in matrix calculation command: `mcalc`. It allows users to perform parallel matrix addition or subtraction using POSIX threads (`pthreads`).
+A custom command-line shell written in C. It runs standard programs while adding its own built-in features: dangerous-command filtering, live timing statistics, pipes, redirection, background jobs, and resource-limit control.
 
 ## Features
-
-- Internal `mcalc` command
-- Parses and validates matrix inputs in the form:
-  ```
-  "(N,N:val1,val2,...,valN^2)"
-    N : size of matrix
-  ```
-- Supports operations:
-  - `"ADD"`: Matrix addition
-  - `"SUB"`: Matrix subtraction (order-sensitive)
-- Uses hierarchical parallel computation (reduction tree)
-- Handles input/output through stdin/stdout only
-- Proper memory management and error handling
+- **Dangerous-command filtering** — blocks commands listed in `danger.txt`, and warns when a command is similar to a dangerous one
+- **Live stats prompt** — shows command count, blocked-command count, and last/average/min/max execution times
+- **Pipes** — `cmd1 | cmd2` using `pipe()` and `dup2()`
+- **Redirection** — send stderr to a file with `2>`
+- **Background jobs** — run a command in the background with `&`
+- **`my_tee`** — a built-in `tee` that writes stdin to stdout and multiple files (supports `-a` to append)
+- **`rlimit`** — show or set resource limits (CPU time, memory, file size, open files) via `setrlimit`
+- Proper memory management and error handling throughout
 
 ## Usage
-
 ```bash
-gcc library.c -o mcalc
-./mcalc danger.txt
+gcc library.c -o myshell
+./myshell
+```
+> The shell reads its blocked-command list from a `danger.txt` file in the same directory.
+
+Example session:
+```bash
+#cmd:0|#dangerous_cmd_blocked:0|last_cmd_time:0.00000|avg_time:0.00000|min_time:0.00000|max_time:0.00000>>echo hello
+hello
+#cmd:1|#dangerous_cmd_blocked:0|last_cmd_time:0.00042|avg_time:0.00042|min_time:0.00042|max_time:0.00042>>ls | my_tee out.txt
+...
+#cmd:2|#dangerous_cmd_blocked:0|...>>rlimit show
+CPU time: soft=unlimited, hard=unlimited
+Memory: soft=-1, hard=-1
+...
 ```
 
-Example commands within the shell:
-```bash
-mcalc "(2,2:1,2,3,4)" "(2,2:5,6,7,8)" "ADD"
-mcalc "(3,3:9,8,7,6,5,4,3,2,1)" "(3,3:1,2,3,4,5,6,7,8,9)" "SUB"
-done
-```
+Type `done` or `exit` to quit.
 
 ## Notes
-
-- Input format must be strictly respected.
-- Output must be in the same matrix format with no extra text.
-- Only square matrices are supported.
+- The blocked-command list is loaded from `danger.txt` at startup.
+- Background jobs (`&`) are not timed but still counted.
+- `rlimit set` applies limits only to the command that follows it.

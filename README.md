@@ -1,40 +1,49 @@
 # Custom Mini Shell
 
 ## Overview
-A custom command-line shell written in C. It runs standard programs while adding its own built-in features: dangerous-command filtering, live timing statistics, pipes, redirection, background jobs, and resource-limit control.
+A custom command-line shell written in C. It runs standard programs while adding built-in features: dangerous-command filtering, live timing statistics, pipes, redirection, background jobs, resource-limit control, and a parallel matrix calculator.
 
 ## Features
-- **Dangerous-command filtering** — blocks commands listed in `danger.txt`, and warns when a command is similar to a dangerous one
-- **Live stats prompt** — shows command count, blocked-command count, and last/average/min/max execution times
-- **Pipes** — `cmd1 | cmd2` using `pipe()` and `dup2()`
-- **Redirection** — send stderr to a file with `2>`
-- **Background jobs** — run a command in the background with `&`
-- **`my_tee`** — a built-in `tee` that writes stdin to stdout and multiple files (supports `-a` to append)
-- **`rlimit`** — show or set resource limits (CPU time, memory, file size, open files) via `setrlimit`
-- Proper memory management and error handling throughout
+- Dangerous-command filtering from a `danger.txt` list (blocks exact matches, warns on similar commands)
+- Live stats prompt showing command count, blocked-command count, and last/average/min/max execution times
+- Supports operations:
+  - `|` : pipes between two commands
+  - `2>` : redirect stderr to a file
+  - `&` : run a command in the background
+- Built-in `my_tee` (writes stdin to stdout + files, `-a` to append)
+- Built-in `rlimit` (show/set CPU, memory, file-size limits via `setrlimit`)
+- Built-in `mcalc` — a parallel matrix calculator that adds or subtracts multiple NxN matrices using a POSIX threads (`pthreads`) reduction tree
+- Proper memory management and error handling
 
 ## Usage
 ```bash
-gcc library.c -o myshell
+gcc library.c -o myshell -lpthread
 ./myshell
 ```
-> The shell reads its blocked-command list from a `danger.txt` file in the same directory.
-
-Example session:
+Example commands within the shell:
 ```bash
-#cmd:0|#dangerous_cmd_blocked:0|last_cmd_time:0.00000|avg_time:0.00000|min_time:0.00000|max_time:0.00000>>echo hello
-hello
-#cmd:1|#dangerous_cmd_blocked:0|last_cmd_time:0.00042|avg_time:0.00042|min_time:0.00042|max_time:0.00042>>ls | my_tee out.txt
-...
-#cmd:2|#dangerous_cmd_blocked:0|...>>rlimit show
-CPU time: soft=unlimited, hard=unlimited
-Memory: soft=-1, hard=-1
-...
+echo hello
+ls | my_tee out.txt
+rlimit show
+mcalc "(2,2:1,2,3,4)" "(2,2:5,6,7,8)" "ADD"
+done
 ```
 
-Type `done` or `exit` to quit.
+## Example
+```
+#cmd:0|#dangerous_cmd_blocked:0|last_cmd_time:0.00000|...>>echo hello
+hello
+#cmd:1|#dangerous_cmd_blocked:0|last_cmd_time:0.00821|...>>mcalc "(2,2:1,2,3,4)" "(2,2:5,6,7,8)" "ADD"
+(2,2:6,8,10,12)
+#cmd:2|#dangerous_cmd_blocked:0|last_cmd_time:0.00063|...>>mcalc "(2,2:9,8,7,6)" "(2,2:1,2,3,4)" "SUB"
+(2,2:8,6,4,2)
+#cmd:3|#dangerous_cmd_blocked:0|...>>rm -rf /
+ERR: Dangerous command detected ("rm -rf /"). Execution prevented.
+#cmd:3|#dangerous_cmd_blocked:1|...>>
+```
 
 ## Notes
 - The blocked-command list is loaded from `danger.txt` at startup.
 - Background jobs (`&`) are not timed but still counted.
 - `rlimit set` applies limits only to the command that follows it.
+- `mcalc` accepts two or more square matrices of equal size.
